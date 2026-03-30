@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>デイリーログ</title>
+
+<!--
+  ============================================================
+  Firebase Modular SDK（CDN版）
+  type="module" で読み込む → GitHub Pages でそのまま動く
+  ============================================================
+-->
+<script type="module">
+
+/* ============================================================
+   ① Firebase 設定値
+   ★ここだけ自分のプロジェクトの値に書き換えてください★
+   取得場所: Firebase Console → プロジェクト設定 → マイアプリ → CDN
+   ============================================================ */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  setPersistence,
+  browserLocalPersistence
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+// ▼▼▼ ここを書き換える ▼▼▼
+const firebaseConfig = {
+    apiKey: "AIzaSyB5_ghW5ciz21rynKFIAoWRGlc2UxiEmsI",
+    authDomain: "dayly-log.firebaseapp.com",
+    projectId: "dayly-log",
+    storageBucket: "dayly-log.firebasestorage.app",
+    messagingSenderId: "816770245525",
+    appId: "1:816770245525:web:8b124d716b206267c18c9c",
+    measurementId: "G-45SNT3Y6TD"
+  };
+// ▲▲▲ ここまで ▲▲▲
+
+/* ============================================================
+   ② Firebase 初期化
+   ============================================================ */
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+
+// ログイン状態をlocalStorageで永続化（再読込してもログイン維持）
+await setPersistence(auth, browserLocalPersistence);
+
+/* ============================================================
+   ③ 認証状態の監視
+   ログイン済み  → アプリ画面を表示
+   未ログイン    → ログイン画面を表示
+   ============================================================ */
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    showApp(user);
+  } else {
+    showLoginScreen();
+  }
+});
+
+/* ============================================================
+   ④ ログイン画面を表示
+   ============================================================ */
+function showLoginScreen() {
+  document.getElementById("login-screen").style.display = "flex";
+  document.getElementById("app-screen").style.display   = "none";
+  document.getElementById("auth-error").textContent     = "";
+}
+
+/* ============================================================
+   ⑤ アプリ画面を表示（ログイン後）
+   ============================================================ */
+function showApp(user) {
+  document.getElementById("login-screen").style.display = "none";
+  document.getElementById("app-screen").style.display   = "block";
+  // ヘッダーにメールアドレスを表示
+  document.getElementById("user-email").textContent     = user.email;
+  // ログ件数バッジを更新
+  const logs = JSON.parse(localStorage.getItem("dailylog_v1") || "[]");
+  if (logs.length > 0) {
+    document.querySelector('[data-tab="log"]').textContent = `📋 ログ (${logs.length})`;
+  }
+}
+
+/* ============================================================
+   ⑥ ログインボタン
+   ============================================================ */
+document.getElementById("login-btn").addEventListener("click", async () => {
+  const email    = document.getElementById("auth-email").value.trim();
+  const password = document.getElementById("auth-password").value;
+  const errEl    = document.getElementById("auth-error");
+  errEl.textContent = "";
+
+  if (!email || !password) {
+    errEl.textContent = "メールアドレスとパスワードを入力してください";
+    return;
+  }
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+    // onAuthStateChanged が showApp() を自動で呼ぶ
+  } catch (e) {
+    errEl.textContent = firebaseErrorMsg(e.code);
+  }
+});
+
+/* ============================================================
+   ⑦ 新規登録ボタン
+   ============================================================ */
+document.getElementById("register-btn").addEventListener("click", async () => {
+  const email    = document.getElementById("auth-email").value.trim();
+  const password = document.getElementById("auth-password").value;
+  const errEl    = document.getElementById("auth-error");
+  errEl.textContent = "";
+
+  if (!email || !password) {
+    errEl.textContent = "メールアドレスとパスワードを入力してください";
+    return;
+  }
+  if (password.length < 6) {
+    errEl.textContent = "パスワードは6文字以上にしてください";
+    return;
+  }
+  try {
+    await createUserWithEmailAndPassword(auth, email, password);
+    // onAuthStateChanged が showApp() を自動で呼ぶ
+  } catch (e) {
+    errEl.textContent = firebaseErrorMsg(e.code);
+  }
+});
+
+/* ============================================================
+   ⑧ ログアウトボタン
+   ============================================================ */
+document.getElementById("logout-btn").addEventListener("click", async () => {
+  if (!confirm("ログアウトしますか？")) return;
+  await signOut(auth);
+  // onAuthStateChanged が showLoginScreen() を自動で呼ぶ
+});
+
+/* ============================================================
+   ⑨ Firebase エラーコード → 日本語メッセージ
+   ============================================================ */
+function firebaseErrorMsg(code) {
+  const map = {
+    "auth/invalid-email":          "メールアドレスの形式が正しくありません",
+    "auth/user-not-found":         "このメールアドレスは登録されていません",
+    "auth/wrong-password":         "パスワードが間違っています",
+    "auth/email-already-in-use":   "このメールアドレスはすでに使われています",
+    "auth/weak-password":          "パスワードは6文字以上にしてください",
+    "auth/too-many-requests":      "試行回数が多すぎます。しばらく待ってから試してください",
+    "auth/network-request-failed": "ネットワークエラーが発生しました",
+    "auth/invalid-credential":     "メールアドレスまたはパスワードが間違っています",
+  };
+  return map[code] || `エラーが発生しました（${code}）`;
+}
+
+/*
+  ============================================================
+  ★ 将来 Firestore に移行するときの拡張ポイント ★
+
+  現在: localStorage でデータを保存
+  将来: 以下のように Firestore に差し替えるだけでOK
+
+  import { getFirestore, collection, addDoc, getDocs, query, orderBy, doc, setDoc } from "firebase/firestore";
+  const db = getFirestore(app);
+
+  // 保存（既存の saveLogs を置き換える）
+  async function saveLogToFirestore(logs) {
+    const uid = auth.currentUser.uid;
+    await setDoc(doc(db, "users", uid), { logs }); // シンプル版
+  }
+
+  // 読み込み（既存の loadLogs を置き換える）
+  async function loadLogsFromFirestore() {
+    const uid = auth.currentUser.uid;
+    const snap = await getDoc(doc(db, "users", uid));
+    return snap.exists() ? snap.data().logs : [];
+  }
+
+  loadLogs() / saveLogs() の中身を上記に差し替えるだけで移行完了。
+  uid ごとにデータが分離されるので、ユーザー追加も自動対応。
+  ============================================================
+*/
+
+</script>
+
+<style>
+/* ============================================================
+   CSS変数・テーマ
+   ============================================================ */
+:root {
+  --bg:           #0e0e0f;
+  --bg2:          #161617;
+  --bg3:          #1e1e20;
+  --bg4:          #28282b;
+  --border:       #2e2e32;
+  --text:         #f0f0f0;
+  --text2:        #a0a0a8;
+  --text3:        #606068;
+  --accent:       #4fd1c5;
+  --accent2:      #38b2a3;
+  --accent-glow:  rgba(79,209,197,0.15);
+  --red:          #fc8181;
+  --yellow:       #f6e05e;
+  --card-radius:  16px;
+  --input-radius: 10px;
+  --font: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+}
+
+[data-theme="light"] {
+  --bg:          #f5f5f7;
+  --bg2:         #ffffff;
+  --bg3:         #f0f0f2;
+  --bg4:         #e8e8ea;
+  --border:      #d0d0d4;
+  --text:        #1a1a1e;
+  --text2:       #505058;
+  --text3:       #a0a0a8;
+  --accent:      #0d9488;
+  --accent2:     #0f766e;
+  --accent-glow: rgba(13,148,136,0.1);
+}
+
+/* ============================================================
+   リセット
+   ============================================================ */
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html { font-size: 16px; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding-bottom: env(safe-area-inset-bottom, 20px);
+  transition: background 0.3s, color 0.3s;
+}
+
+/* ============================================================
+   ログイン画面
+   ============================================================ */
+#login-screen {
+  display: flex; /* JSで切替。初期値はflex（ログイン画面表示） */
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px 20px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 36px 24px 28px;
+}
+
+.login-logo { text-align: center; margin-bottom: 28px; }
+.login-logo-title {
+  font-size: 26px; font-weight: 800; letter-spacing: -0.5px; color: var(--text);
+}
+.login-logo-title span { color: var(--accent); }
+.login-logo-sub { font-size: 12px; color: var(--text3); margin-top: 6px; }
+
+.login-field { margin-bottom: 14px; }
+.login-field label {
+  display: block; font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 6px;
+}
+.login-field input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--input-radius);
+  padding: 14px 13px;
+  font-size: 16px; /* iOSズーム防止 */
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-appearance: none;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.login-field input:focus { border-color: var(--accent); }
+
+.auth-error {
+  font-size: 13px;
+  color: var(--red);
+  font-weight: 600;
+  text-align: center;
+  min-height: 20px;
+  margin-bottom: 12px;
+}
+
+.login-btn-primary {
+  width: 100%;
+  padding: 15px;
+  border-radius: 12px;
+  background: var(--accent);
+  border: none;
+  color: #0e0e0f;
+  font-size: 16px; font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all 0.2s;
+  margin-bottom: 10px;
+}
+.login-btn-primary:active { transform: scale(0.98); background: var(--accent2); }
+
+.login-btn-secondary {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  font-size: 15px; font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all 0.2s;
+}
+.login-btn-secondary:active { transform: scale(0.98); background: var(--bg3); }
+
+/* ============================================================
+   アプリ画面
+   ============================================================ */
+#app-screen { display: none; } /* ログイン後にJSで表示 */
+
+/* ============================================================
+   ヘッダー
+   ============================================================ */
+.header {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 14px 10px;
+  padding-top: max(12px, env(safe-area-inset-top));
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+
+.header-left { flex: 1; min-width: 0; }
+.header-title { font-size: 17px; font-weight: 700; letter-spacing: -0.5px; color: var(--text); }
+.header-title span { color: var(--accent); }
+.header-email { font-size: 11px; color: var(--text3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.header-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+
+.icon-btn {
+  height: 34px; padding: 0 10px;
+  border-radius: 9px;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.2s; white-space: nowrap; font-family: var(--font);
+}
+.icon-btn:active { transform: scale(0.93); background: var(--bg4); }
+.logout-btn { color: var(--red); border-color: rgba(252,129,129,0.3); background: rgba(252,129,129,0.08); }
+
+/* ============================================================
+   タブバー
+   ============================================================ */
+.tab-bar {
+  display: flex; background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 4px;
+  position: sticky; top: calc(env(safe-area-inset-top) + 58px); z-index: 99;
+}
+.tab {
+  flex: 1; padding: 12px 4px; text-align: center;
+  font-size: 13px; font-weight: 600; color: var(--text3);
+  cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s;
+}
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ============================================================
+   ページ
+   ============================================================ */
+.page { display: none; padding: 16px; }
+.page.active { display: block; }
+
+/* ============================================================
+   セクション
+   ============================================================ */
+.section { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--card-radius); margin-bottom: 12px; overflow: hidden; }
+.section-header { padding: 14px 16px 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--border); }
+.section-body { padding: 14px 16px; }
+
+/* ============================================================
+   フォーム要素
+   ============================================================ */
+.field { margin-bottom: 14px; }
+.field:last-child { margin-bottom: 0; }
+.field label { display: block; font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+.field input[type="text"],
+.field input[type="number"],
+.field input[type="date"],
+.field textarea {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--input-radius); padding: 11px 13px;
+  font-size: 16px; color: var(--text); font-family: var(--font);
+  -webkit-appearance: none; appearance: none; outline: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+.field input:focus, .field textarea:focus { border-color: var(--accent); background: var(--bg4); }
+.field textarea { min-height: 80px; resize: vertical; line-height: 1.5; }
+
+/* ============================================================
+   セグメントボタン
+   ============================================================ */
+.segment { display: flex; gap: 6px; flex-wrap: wrap; }
+.seg-btn {
+  flex: 1; min-width: 0; padding: 9px 6px; border-radius: 8px;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); font-size: 13px; font-weight: 600;
+  text-align: center; cursor: pointer; transition: all 0.15s;
+  white-space: nowrap; font-family: var(--font); -webkit-appearance: none;
+}
+.seg-btn.selected { background: var(--accent); border-color: var(--accent); color: #0e0e0f; }
+.seg-btn:active { transform: scale(0.96); }
+
+/* ============================================================
+   星評価
+   ============================================================ */
+.star-row { display: flex; gap: 8px; }
+.star-btn {
+  width: 44px; height: 44px; border-radius: 10px;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text3); font-size: 20px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.15s; -webkit-appearance: none; font-family: var(--font);
+}
+.star-btn.active { background: rgba(246,224,94,0.15); border-color: var(--yellow); color: var(--yellow); }
+.star-btn:active { transform: scale(0.9); }
+
+/* ============================================================
+   射精エントリ
+   ============================================================ */
+.ejacula-entry { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; position: relative; }
+.remove-entry-btn {
+  position: absolute; top: 8px; right: 8px;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--bg4); border: 1px solid var(--border);
+  color: var(--text3); font-size: 14px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; -webkit-appearance: none; font-family: var(--font);
+}
+.add-entry-btn {
+  width: 100%; padding: 10px; border-radius: 8px;
+  background: transparent; border: 1px dashed var(--border);
+  color: var(--text3); font-size: 14px; font-weight: 600;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-family: var(--font); transition: all 0.2s;
+}
+.add-entry-btn:active { background: var(--bg3); }
+
+/* ============================================================
+   並列フィールド
+   ============================================================ */
+.field-row { display: flex; gap: 10px; }
+.field-row .field { flex: 1; }
+
+/* ============================================================
+   保存ボタン
+   ============================================================ */
+.save-btn {
+  width: 100%; padding: 16px; border-radius: 14px;
+  background: var(--accent); border: none; color: #0e0e0f;
+  font-size: 17px; font-weight: 700; cursor: pointer; font-family: var(--font);
+  transition: all 0.2s; letter-spacing: -0.3px; margin-top: 8px;
+}
+.save-btn:active { transform: scale(0.98); background: var(--accent2); }
+
+/* ============================================================
+   ログカード
+   ============================================================ */
+.log-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--card-radius); margin-bottom: 12px; overflow: hidden; animation: slideIn 0.25s ease; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.log-card-header { padding: 14px 16px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); gap: 8px; }
+.log-card-date { font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
+.log-card-day { font-size: 12px; color: var(--accent); font-weight: 600; margin-top: 2px; }
+.log-card-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+.card-btn { padding: 7px 11px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: var(--font); border: 1px solid; transition: all 0.15s; -webkit-appearance: none; }
+.card-btn:active { transform: scale(0.94); }
+.copy-btn   { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
+.edit-btn   { background: var(--bg3); border-color: var(--border); color: var(--text2); }
+.delete-btn { background: rgba(252,129,129,0.1); border-color: var(--red); color: var(--red); }
+
+.log-card-body { padding: 14px 16px; }
+.log-preview { font-size: 13px; color: var(--text2); line-height: 1.7; white-space: pre-wrap; word-break: break-all; }
+.log-preview-toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--accent); cursor: pointer; margin-top: 8px; padding: 4px 0; }
+
+/* ============================================================
+   サマリーカード
+   ============================================================ */
+.summary-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--card-radius); padding: 16px; margin-bottom: 16px; }
+.summary-title { font-size: 12px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: var(--accent); margin-bottom: 14px; }
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.summary-item { background: var(--bg3); border-radius: 10px; padding: 12px; text-align: center; }
+.summary-item-label { font-size: 11px; color: var(--text3); font-weight: 600; margin-bottom: 4px; }
+.summary-item-value { font-size: 22px; font-weight: 700; color: var(--text); }
+.summary-item-sub   { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+/* ============================================================
+   条件付きフィールド
+   ============================================================ */
+.conditional-fields { background: var(--bg3); border-radius: 10px; padding: 12px; margin-top: 10px; border: 1px solid var(--border); }
+
+/* ============================================================
+   トースト
+   ============================================================ */
+.toast {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+  left: 50%; transform: translateX(-50%) translateY(20px);
+  background: var(--bg4); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 20px;
+  font-size: 14px; font-weight: 600; color: var(--text);
+  z-index: 9999; opacity: 0; transition: all 0.3s;
+  white-space: nowrap; backdrop-filter: blur(10px);
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ============================================================
+   空状態
+   ============================================================ */
+.empty-state { text-align: center; padding: 48px 24px; color: var(--text3); }
+.empty-state-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-state-text { font-size: 15px; font-weight: 600; margin-bottom: 6px; color: var(--text2); }
+.empty-state-sub  { font-size: 13px; line-height: 1.5; }
+
+/* ============================================================
+   編集モーダル
+   ============================================================ */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; display: none; align-items: flex-end; backdrop-filter: blur(4px); }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--bg2); border-radius: 20px 20px 0 0; width: 100%; max-height: 90vh; overflow-y: auto; padding: 20px 16px calc(env(safe-area-inset-bottom, 0px) + 20px); animation: slideUp 0.3s ease; }
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.modal-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 20px; }
+.modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+
+::-webkit-scrollbar { display: none; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     ログイン画面
+     ============================================================ -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-title">デイリー<span>ログ</span></div>
+      <div class="login-logo-sub">プライベート健康管理ツール</div>
+    </div>
+    <div class="login-field">
+      <label>メールアドレス</label>
+      <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email">
+    </div>
+    <div class="login-field">
+      <label>パスワード（6文字以上）</label>
+      <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <div class="auth-error" id="auth-error"></div>
+    <button class="login-btn-primary"   id="login-btn">ログイン</button>
+    <button class="login-btn-secondary" id="register-btn">新規登録</button>
+  </div>
+</div>
+
+<!-- ============================================================
+     アプリ画面（ログイン後に表示）
+     ============================================================ -->
+<div id="app-screen">
+
+  <!-- ヘッダー -->
+  <div class="header">
+    <div class="header-left">
+      <div class="header-title">デイリー<span>ログ</span></div>
+      <div class="header-email" id="user-email"></div><!-- ログイン中のメール -->
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" id="themeToggle">🌙</button>
+      <button class="icon-btn logout-btn" id="logout-btn">ログアウト</button>
+    </div>
+  </div>
+
+  <!-- タブバー -->
+  <div class="tab-bar">
+    <div class="tab active" data-tab="input">📝 入力</div>
+    <div class="tab" data-tab="log">📋 ログ</div>
+    <div class="tab" data-tab="stats">📊 統計</div>
+  </div>
+
+  <!-- ======== 入力ページ ======== -->
+  <div id="page-input" class="page active">
+
+    <div class="section">
+      <div class="section-header">📅 日付</div>
+      <div class="section-body">
+        <div class="field"><label>日付</label><input type="date" id="f-date"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">💪 筋トレ</div>
+      <div class="section-body">
+        <div class="field">
+          <label>実施</label>
+          <div class="segment">
+            <button class="seg-btn" data-group="workout" data-val="Yes">Yes</button>
+            <button class="seg-btn" data-group="workout" data-val="No">No</button>
+          </div>
+        </div>
+        <div id="workout-fields" class="conditional-fields" style="display:none;">
+          <div class="field"><label>開始時間</label><input type="text" id="f-workout-time" placeholder="例: 17:00"></div>
+          <div class="field"><label>内容</label><input type="text" id="f-workout-content" placeholder="例: スクワット20×2"></div>
+          <div class="field"><label>主観的きつさ</label><div class="star-row" id="stars-workout"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">🌅 朝立ち</div>
+      <div class="section-body">
+        <div class="field">
+          <div class="segment">
+            <button class="seg-btn" data-group="morning" data-val="なし">なし</button>
+            <button class="seg-btn" data-group="morning" data-val="弱い">弱い</button>
+            <button class="seg-btn" data-group="morning" data-val="普通">普通</button>
+            <button class="seg-btn" data-group="morning" data-val="強い">強い</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">🔥 性欲</div>
+      <div class="section-body">
+        <div class="field"><div class="star-row" id="stars-libido"></div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">💧 射精</div>
+      <div class="section-body">
+        <div class="field">
+          <label>射精</label>
+          <div class="segment">
+            <button class="seg-btn" data-group="ejac" data-val="あり">あり</button>
+            <button class="seg-btn" data-group="ejac" data-val="なし">なし</button>
+          </div>
+        </div>
+        <div id="ejac-fields" class="conditional-fields" style="display:none;">
+          <div id="ejac-entries"></div>
+          <button class="add-entry-btn" id="add-ejac-btn">＋ 追加</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">⚡ 勃起の質</div>
+      <div class="section-body">
+        <div class="field"><div class="star-row" id="stars-erection"></div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">🫁 下半身の状態</div>
+      <div class="section-body">
+        <div class="field">
+          <div class="segment" style="flex-wrap:wrap;">
+            <button class="seg-btn" data-group="lower" data-val="張りなし">張りなし</button>
+            <button class="seg-btn" data-group="lower" data-val="少し張り">少し張り</button>
+            <button class="seg-btn" data-group="lower" data-val="張りあり">張りあり</button>
+            <button class="seg-btn" data-group="lower" data-val="強い張り">強い張り</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">😴 睡眠</div>
+      <div class="section-body">
+        <div class="field-row">
+          <div class="field"><label>就寝</label><input type="text" id="f-sleep-start" placeholder="例: 1:00"></div>
+          <div class="field"><label>起床</label><input type="text" id="f-sleep-end" placeholder="例: 8:00"></div>
+        </div>
+        <div class="field"><label>睡眠時間（自動計算）</label><input type="text" id="f-sleep-duration" readonly style="color:var(--accent);"></div>
+        <div class="field"><label>睡眠の質</label><div class="star-row" id="stars-sleep"></div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">⚖️ 体重</div>
+      <div class="section-body">
+        <div class="field"><label>体重 (kg)</label><input type="number" id="f-weight" placeholder="例: 68.4" step="0.1" min="0" max="200"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">🍽️ 食事</div>
+      <div class="section-body">
+        <div class="field"><label>朝</label><input type="text" id="f-meal-morning" placeholder="例: トースト、コーヒー"></div>
+        <div class="field"><label>昼</label><input type="text" id="f-meal-noon" placeholder="例: ランチ定食"></div>
+        <div class="field"><label>夜</label><input type="text" id="f-meal-night" placeholder="例: 鶏肉、野菜炒め"></div>
+        <div class="field"><label>間食</label><input type="text" id="f-meal-snack" placeholder="例: プロテインバー"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">🍺 飲酒</div>
+      <div class="section-body">
+        <div class="field">
+          <div class="segment">
+            <button class="seg-btn" data-group="alcohol" data-val="あり">あり</button>
+            <button class="seg-btn" data-group="alcohol" data-val="なし">なし</button>
+          </div>
+        </div>
+        <div id="alcohol-fields" class="conditional-fields" style="display:none;">
+          <div class="field"><label>種類</label><input type="text" id="f-alcohol-type" placeholder="例: ビール"></div>
+          <div class="field-row">
+            <div class="field"><label>量（数字→杯）</label><input type="number" id="f-alcohol-amount" placeholder="例: 2" min="0" step="0.5"></div>
+            <div class="field"><label>時間</label><input type="text" id="f-alcohol-time" placeholder="例: 21:00"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">☕ カフェイン</div>
+      <div class="section-body">
+        <div class="field">
+          <div class="segment">
+            <button class="seg-btn" data-group="caffeine" data-val="あり">あり</button>
+            <button class="seg-btn" data-group="caffeine" data-val="なし">なし</button>
+          </div>
+        </div>
+        <div id="caffeine-fields" class="conditional-fields" style="display:none;">
+          <div class="field-row">
+            <div class="field"><label>量（数字→杯）</label><input type="number" id="f-caffeine-amount" placeholder="例: 1" min="0" step="0.5"></div>
+            <div class="field"><label>時間</label><input type="text" id="f-caffeine-time" placeholder="例: 10:00"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">💊 シトルリン</div>
+      <div class="section-body">
+        <div class="field">
+          <div class="segment">
+            <button class="seg-btn" data-group="citrul" data-val="あり">あり</button>
+            <button class="seg-btn" data-group="citrul" data-val="なし">なし</button>
+          </div>
+        </div>
+        <div id="citrul-fields" class="conditional-fields" style="display:none;">
+          <div class="field-row">
+            <div class="field"><label>量（数字→mg）</label><input type="number" id="f-citrul-amount" placeholder="例: 1200" min="0"></div>
+            <div class="field"><label>時間</label><input type="text" id="f-citrul-time" placeholder="例: 16:00"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">🧬 亜鉛</div>
+      <div class="section-body">
+        <div class="field"><label>摂取時間</label><input type="text" id="f-zinc-time" placeholder="例: 22:00"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">📝 メモ</div>
+      <div class="section-body">
+        <div class="field"><textarea id="f-memo" placeholder="気になったこと、体調の変化など…"></textarea></div>
+      </div>
+    </div>
+
+    <button class="save-btn" id="saveBtn">✅ 保存する</button>
+    <div style="height:24px;"></div>
+  </div><!-- end page-input -->
+
+  <!-- ======== ログページ ======== -->
+  <div id="page-log" class="page">
+    <div id="log-list"></div>
+  </div>
+
+  <!-- ======== 統計ページ ======== -->
+  <div id="page-stats" class="page">
+    <div id="stats-content"></div>
+  </div>
+
+</div><!-- end app-screen -->
+
+<!-- 編集モーダル -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">ログを編集</div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<!-- トースト -->
+<div class="toast" id="toast"></div>
+
+<!-- ============================================================
+     アプリロジック（通常のscriptタグ）
+     Firebase moduleスクリプトとは別タグで動く
+     ============================================================ -->
+<script>
+
+/* ============================================================
+   テーマ管理
+   ============================================================ */
+const THEME_KEY = 'dailylog_theme';
+let currentTheme = localStorage.getItem(THEME_KEY) || 'dark';
+
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  const btn = document.getElementById('themeToggle');
+  if (btn) btn.textContent = t === 'dark' ? '🌙' : '☀️';
+  currentTheme = t;
+  localStorage.setItem(THEME_KEY, t);
+}
+applyTheme(currentTheme);
+
+document.getElementById('themeToggle').addEventListener('click', () => {
+  applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
+});
+
+/* ============================================================
+   タブ切替
+   ============================================================ */
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('page-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'log')   renderLog();
+    if (tab.dataset.tab === 'stats') renderStats();
+  });
+});
+
+/* ============================================================
+   ユーティリティ
+   ============================================================ */
+function toDateStr(d) { return d.toISOString().split('T')[0]; }
+
+function formatDateJP(s) {
+  const [,m,d] = s.split('-').map(Number);
+  return m + '月' + d + '日';
+}
+
+function getDayOfWeek(s) {
+  return ['日','月','火','水','木','金','土'][new Date(s+'T00:00:00').getDay()] + '曜日';
+}
+
+function starsStr(n) { return n ? '★'.repeat(n)+'☆'.repeat(5-n) : ''; }
+
+function showToast(msg, ms) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), ms || 2200);
+}
+
+function escapeHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ============================================================
+   データ保存・読み込み（localStorage）
+   ★ Firestore移行ポイント: この2関数を置き換えるだけでOK ★
+   ============================================================ */
+const STORAGE_KEY = 'dailylog_v1';
+function loadLogs() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); } catch { return []; } }
+function saveLogs(logs) { localStorage.setItem(STORAGE_KEY, JSON.stringify(logs)); }
+
+/* ============================================================
+   セグメントボタン
+   ============================================================ */
+let selections = {};
+
+document.addEventListener('click', e => {
+  if (!e.target.classList.contains('seg-btn')) return;
+  const btn = e.target;
+  const {group, val} = btn.dataset;
+  document.querySelectorAll('.seg-btn[data-group="'+group+'"]').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  selections[group] = val;
+  // 条件フィールド表示切替
+  const map = {workout:'workout-fields',ejac:'ejac-fields',alcohol:'alcohol-fields',caffeine:'caffeine-fields',citrul:'citrul-fields'};
+  if (map[group]) document.getElementById(map[group]).style.display = (val==='あり'||val==='Yes') ? 'block' : 'none';
+});
+
+/* ============================================================
+   星評価
+   ============================================================ */
+let starValues = {};
+
+function createStars(containerId, key) {
+  const c = document.getElementById(containerId);
+  if (!c) return;
+  c.innerHTML = '';
+  starValues[key] = starValues[key] || 0;
+  for (let i = 1; i <= 5; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'star-btn';
+    btn.textContent = '★';
+    btn.dataset.val = i;
+    if (i <= starValues[key]) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      starValues[key] = (starValues[key] === i) ? 0 : i;
+      c.querySelectorAll('.star-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.val) <= starValues[key]));
+    });
+    c.appendChild(btn);
+  }
+}
+
+createStars('stars-workout','workout');
+createStars('stars-libido','libido');
+createStars('stars-erection','erection');
+createStars('stars-sleep','sleep');
+
+/* ============================================================
+   睡眠時間自動計算
+   ============================================================ */
+function parseTime(s) {
+  const m = (s||'').match(/^(\d{1,2}):(\d{2})$/);
+  return m ? +m[1]*60 + +m[2] : null;
+}
+
+function calcSleepDuration(s, e) {
+  const sv = parseTime(s), ev = parseTime(e);
+  if (sv===null||ev===null) return '';
+  let d = ev-sv; if(d<0) d+=1440;
+  const h=Math.floor(d/60), m=d%60;
+  return m>0 ? h+'時間'+m+'分' : h+'時間';
+}
+
+document.getElementById('f-sleep-start').addEventListener('input', () => {
+  document.getElementById('f-sleep-duration').value = calcSleepDuration(
+    document.getElementById('f-sleep-start').value,
+    document.getElementById('f-sleep-end').value
+  );
+});
+document.getElementById('f-sleep-end').addEventListener('input', () => {
+  document.getElementById('f-sleep-duration').value = calcSleepDuration(
+    document.getElementById('f-sleep-start').value,
+    document.getElementById('f-sleep-end').value
+  );
+});
+
+/* ============================================================
+   射精エントリ管理
+   ============================================================ */
+let ejacEntries = [];
+
+function renderEjacEntries() {
+  const c = document.getElementById('ejac-entries');
+  c.innerHTML = '';
+  ejacEntries.forEach((entry, i) => {
+    const div = document.createElement('div');
+    div.className = 'ejacula-entry';
+    div.innerHTML = `
+      <button class="remove-entry-btn" data-idx="${i}">✕</button>
+      <div class="field"><label>時刻（${i+1}回目）</label><input type="text" class="ejac-time" data-idx="${i}" placeholder="例: 14:00" value="${entry.time||''}"></div>
+      <div class="field"><label>方法</label><input type="text" class="ejac-method" data-idx="${i}" placeholder="例: 手" value="${entry.method||''}"></div>`;
+    c.appendChild(div);
+  });
+  c.querySelectorAll('.remove-entry-btn').forEach(btn => {
+    btn.addEventListener('click', () => { ejacEntries.splice(+btn.dataset.idx,1); renderEjacEntries(); });
+  });
+  c.querySelectorAll('.ejac-time').forEach(input => {
+    input.addEventListener('input', () => { ejacEntries[+input.dataset.idx].time = input.value; });
+  });
+  c.querySelectorAll('.ejac-method').forEach(input => {
+    input.addEventListener('input', () => { ejacEntries[+input.dataset.idx].method = input.value; });
+  });
+}
+
+document.getElementById('add-ejac-btn').addEventListener('click', () => {
+  ejacEntries.push({time:'',method:''});
+  renderEjacEntries();
+});
+
+/* ============================================================
+   デフォルト日付（前回の翌日）
+   ============================================================ */
+function setDefaultDate() {
+  const logs = loadLogs();
+  let def;
+  if (logs.length > 0) {
+    const d = new Date(logs[0].date+'T00:00:00');
+    d.setDate(d.getDate()+1);
+    def = toDateStr(d);
+    if (def > toDateStr(new Date())) def = toDateStr(new Date());
+  } else {
+    def = toDateStr(new Date());
+  }
+  document.getElementById('f-date').value = def;
+}
+setDefaultDate();
+
+/* ============================================================
+   フォームリセット
+   ============================================================ */
+function resetForm() {
+  document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('selected'));
+  selections = {};
+  ['workout-fields','ejac-fields','alcohol-fields','caffeine-fields','citrul-fields']
+    .forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+  ['f-workout-time','f-workout-content','f-sleep-start','f-sleep-end','f-sleep-duration',
+   'f-weight','f-meal-morning','f-meal-noon','f-meal-night','f-meal-snack',
+   'f-alcohol-type','f-alcohol-amount','f-alcohol-time','f-caffeine-amount','f-caffeine-time',
+   'f-citrul-amount','f-citrul-time','f-zinc-time','f-memo']
+    .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  ['workout','libido','erection','sleep'].forEach(k => { starValues[k]=0; });
+  createStars('stars-workout','workout');
+  createStars('stars-libido','libido');
+  createStars('stars-erection','erection');
+  createStars('stars-sleep','sleep');
+  ejacEntries = [];
+  renderEjacEntries();
+  setDefaultDate();
+}
+
+/* ============================================================
+   フォームからデータ収集
+   ============================================================ */
+function collectFormData() {
+  const v = id => document.getElementById(id)?.value || '';
+  return {
+    date: v('f-date'),
+    workout: { done:selections.workout||'', time:v('f-workout-time'), content:v('f-workout-content'), intensity:starValues.workout||0 },
+    morningErection: selections.morning||'',
+    libido: starValues.libido||0,
+    ejaculation: { done:selections.ejac||'', entries:ejacEntries.map(e=>({time:e.time,method:e.method})) },
+    erection: starValues.erection||0,
+    lowerBody: selections.lower||'',
+    sleep: { start:v('f-sleep-start'), end:v('f-sleep-end'), duration:v('f-sleep-duration'), quality:starValues.sleep||0 },
+    weight: v('f-weight'),
+    meals: { morning:v('f-meal-morning'), noon:v('f-meal-noon'), night:v('f-meal-night'), snack:v('f-meal-snack') },
+    alcohol: { done:selections.alcohol||'', type:v('f-alcohol-type'), amount:v('f-alcohol-amount'), time:v('f-alcohol-time') },
+    caffeine: { done:selections.caffeine||'', amount:v('f-caffeine-amount'), time:v('f-caffeine-time') },
+    citruline: { done:selections.citrul||'', amount:v('f-citrul-amount'), time:v('f-citrul-time') },
+    zinc: { time:v('f-zinc-time') },
+    memo: v('f-memo'),
+    savedAt: Date.now(),
+  };
+}
+
+/* ============================================================
+   保存処理
+   ============================================================ */
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const data = collectFormData();
+  if (!data.date) { showToast('⚠️ 日付を入力してください'); return; }
+  const logs = loadLogs();
+  const idx = logs.findIndex(l => l.date === data.date);
+  if (idx >= 0) {
+    if (!confirm(formatDateJP(data.date)+'のログは既に存在します。上書きしますか？')) return;
+    logs[idx] = data;
+  } else { logs.unshift(data); }
+  logs.sort((a,b) => b.date.localeCompare(a.date));
+  saveLogs(logs);
+  document.querySelector('[data-tab="log"]').textContent = `📋 ログ (${logs.length})`;
+  showToast('✅ 保存しました！');
+  resetForm();
+  setTimeout(() => document.querySelector('[data-tab="log"]').click(), 500);
+});
+
+/* ============================================================
+   テキスト整形（コピー用）
+   ============================================================ */
+function formatLogText(log, dayNum) {
+  const L = [];
+  L.push(formatDateJP(log.date)+'（'+getDayOfWeek(log.date)+'）'+(dayNum?' Day'+dayNum:''));
+  L.push('');
+
+  if (log.workout?.done) {
+    L.push('【筋トレ】'); L.push('実施：'+log.workout.done);
+    if (log.workout.done==='Yes') {
+      if(log.workout.time)      L.push('開始時間：'+log.workout.time);
+      if(log.workout.content)   L.push('内容：'+log.workout.content);
+      if(log.workout.intensity) L.push('主観的きつさ：'+starsStr(log.workout.intensity));
+    }
+    L.push('');
+  }
+  if (log.morningErection) { L.push('【朝立ち】'); L.push(log.morningErection); L.push(''); }
+  if (log.libido) { L.push('【性欲】'); L.push(starsStr(log.libido)); L.push(''); }
+
+  if (log.ejaculation?.done) {
+    L.push('【射精】'); L.push(log.ejaculation.done);
+    if (log.ejaculation.done==='あり' && log.ejaculation.entries?.length>0) {
+      log.ejaculation.entries.forEach((e,i) => {
+        if(log.ejaculation.entries.length>1) L.push('  '+(i+1)+'回目');
+        if(e.time)   L.push('→ 時刻：'+e.time);
+        if(e.method) L.push('→ 方法：'+e.method);
+      });
+    }
+    L.push('');
+  }
+
+  if (log.erection) { L.push('【勃起の質（今日の体感）】'); L.push(starsStr(log.erection)); L.push(''); }
+  if (log.lowerBody) { L.push('【下半身の状態】'); L.push(log.lowerBody); L.push(''); }
+
+  const sl = log.sleep;
+  if (sl && (sl.start||sl.end||sl.quality)) {
+    L.push('【睡眠】');
+    if(sl.start)    L.push('就寝：'+sl.start);
+    if(sl.end)      L.push('起床：'+sl.end);
+    if(sl.duration) L.push('睡眠時間：'+sl.duration);
+    if(sl.quality)  L.push('睡眠の質：'+starsStr(sl.quality));
+    L.push('');
+  }
+
+  if (log.weight) { L.push('【体重】'); L.push(log.weight+'kg'); L.push(''); }
+
+  const ml = log.meals;
+  if (ml && (ml.morning||ml.noon||ml.night||ml.snack)) {
+    L.push('【食事】');
+    if(ml.morning) L.push('朝：'+ml.morning);
+    if(ml.noon)    L.push('昼：'+ml.noon);
+    if(ml.night)   L.push('夜：'+ml.night);
+    if(ml.snack)   L.push('間食：'+ml.snack);
+    L.push('');
+  }
+
+  if (log.alcohol?.done) {
+    L.push('【飲酒】'); L.push(log.alcohol.done);
+    if(log.alcohol.done==='あり') {
+      if(log.alcohol.type)   L.push('種類：'+log.alcohol.type);
+      if(log.alcohol.amount) L.push('量：'+log.alcohol.amount+'杯');
+      if(log.alcohol.time)   L.push('時間：'+log.alcohol.time);
+    }
+    L.push('');
+  }
+
+  if (log.caffeine?.done) {
+    L.push('【カフェイン】'); L.push(log.caffeine.done);
+    if(log.caffeine.done==='あり') {
+      if(log.caffeine.amount) L.push('量：'+log.caffeine.amount+'杯');
+      if(log.caffeine.time)   L.push('時間：'+log.caffeine.time);
+    }
+    L.push('');
+  }
+
+  if (log.citruline?.done) {
+    L.push('【シトルリン】'); L.push(log.citruline.done);
+    if(log.citruline.done==='あり') {
+      if(log.citruline.amount) L.push('摂取量：'+log.citruline.amount+'mg');
+      if(log.citruline.time)   L.push('摂取時間：'+log.citruline.time);
+    }
+    L.push('');
+  }
+
+  if (log.zinc?.time) { L.push('【亜鉛】'); L.push('摂取時間：'+log.zinc.time); L.push(''); }
+  if (log.memo) { L.push('【メモ】'); L.push(log.memo); L.push(''); }
+
+  return L.join('\n').trim();
+}
+
+/* ============================================================
+   ログ一覧レンダリング
+   ============================================================ */
+function renderLog() {
+  const container = document.getElementById('log-list');
+  const logs = loadLogs();
+  if (logs.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">ログがありません</div><div class="empty-state-sub">入力タブから記録を追加してください</div></div>';
+    return;
+  }
+  container.innerHTML = '';
+  const firstDate = logs[logs.length-1]?.date;
+  logs.forEach((log, idx) => {
+    const dayNum = Math.round((new Date(log.date+'T00:00:00')-new Date(firstDate+'T00:00:00'))/86400000)+1;
+    const fullText    = formatLogText(log, dayNum);
+    const previewText = fullText.split('\n').slice(0,5).join('\n');
+    const isLong      = fullText.split('\n').length > 5;
+    const card = document.createElement('div');
+    card.className = 'log-card';
+    card.innerHTML = `
+      <div class="log-card-header">
+        <div>
+          <div class="log-card-date">${formatDateJP(log.date)}（${getDayOfWeek(log.date)}）</div>
+          <div class="log-card-day">Day ${dayNum}</div>
+        </div>
+        <div class="log-card-actions">
+          <button class="card-btn copy-btn" data-idx="${idx}">コピー</button>
+          <button class="card-btn edit-btn" data-idx="${idx}">編集</button>
+          <button class="card-btn delete-btn" data-idx="${idx}">削除</button>
+        </div>
+      </div>
+      <div class="log-card-body">
+        <div class="log-preview" id="preview-${idx}">${escapeHtml(previewText)}</div>
+        ${isLong?`<div class="log-preview-toggle" data-idx="${idx}" data-expanded="false">▼ もっと見る</div>`:''}
+      </div>`;
+    container.appendChild(card);
+
+    card.querySelector('.copy-btn').addEventListener('click', () => {
+      copyToClipboard(formatLogText(log,dayNum), formatDateJP(log.date)+'のログをコピーしました 📋');
+    });
+    card.querySelector('.delete-btn').addEventListener('click', () => {
+      if(!confirm(formatDateJP(log.date)+'のログを削除しますか？')) return;
+      const logs2=loadLogs(); logs2.splice(idx,1); saveLogs(logs2);
+      showToast('🗑️ 削除しました'); renderLog();
+    });
+    card.querySelector('.edit-btn').addEventListener('click', () => openEditModal(idx));
+
+    const toggle = card.querySelector('.log-preview-toggle');
+    if (toggle) {
+      const preview = card.querySelector('#preview-'+idx);
+      toggle.addEventListener('click', () => {
+        const expanded = toggle.dataset.expanded==='true';
+        preview.textContent     = expanded ? previewText : fullText;
+        toggle.textContent      = expanded ? '▼ もっと見る' : '▲ 閉じる';
+        toggle.dataset.expanded = expanded ? 'false' : 'true';
+      });
+    }
+  });
+}
+
+/* ============================================================
+   クリップボードコピー
+   ============================================================ */
+function copyToClipboard(text, msg) {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(()=>showToast(msg||'✅ コピーしました')).catch(()=>fallbackCopy(text,msg));
+  } else { fallbackCopy(text, msg); }
+}
+function fallbackCopy(text, msg) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.cssText='position:fixed;opacity:0;';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  try { document.execCommand('copy'); showToast(msg||'✅ コピーしました'); }
+  catch { showToast('⚠️ コピーに失敗しました'); }
+  document.body.removeChild(ta);
+}
+
+/* ============================================================
+   編集モーダル
+   ============================================================ */
+function openEditModal(idx) {
+  const log = loadLogs()[idx];
+  if (!log) return;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">📅 日付</div>
+      <div class="section-body"><div class="field"><input type="date" id="edit-date" value="${log.date}"></div></div>
+    </div>
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">📝 メモ</div>
+      <div class="section-body"><div class="field"><textarea id="edit-memo">${escapeHtml(log.memo||'')}</textarea></div></div>
+    </div>
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">⚖️ 体重</div>
+      <div class="section-body"><div class="field"><input type="number" id="edit-weight" value="${log.weight||''}" placeholder="kg" step="0.1"></div></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button class="save-btn" style="background:var(--bg3);color:var(--text2);" id="edit-cancel-btn">キャンセル</button>
+      <button class="save-btn" id="edit-save-btn">保存</button>
+    </div>`;
+  const modal = document.getElementById('editModal');
+  modal.classList.add('open');
+  document.getElementById('edit-cancel-btn').addEventListener('click', () => modal.classList.remove('open'));
+  document.getElementById('edit-save-btn').addEventListener('click', () => {
+    const logs2=loadLogs();
+    logs2[idx].date   = document.getElementById('edit-date').value;
+    logs2[idx].memo   = document.getElementById('edit-memo').value;
+    logs2[idx].weight = document.getElementById('edit-weight').value;
+    logs2.sort((a,b)=>b.date.localeCompare(a.date));
+    saveLogs(logs2); modal.classList.remove('open'); showToast('✏️ 編集しました'); renderLog();
+  });
+  modal.addEventListener('click', e => { if(e.target===modal) modal.classList.remove('open'); }, {once:true});
+}
+
+/* ============================================================
+   統計ページ
+   ============================================================ */
+function summaryItem(label, value, sub) {
+  return `<div class="summary-item"><div class="summary-item-label">${label}</div><div class="summary-item-value">${value}</div><div class="summary-item-sub">${sub}</div></div>`;
+}
+
+function renderStats() {
+  const container = document.getElementById('stats-content');
+  const logs = loadLogs();
+  if (logs.length===0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-text">データが不足しています</div><div class="empty-state-sub">記録を追加すると統計が表示されます</div></div>';
+    return;
+  }
+  const recent = logs.slice(0,7);
+  function avg(arr) {
+    const v=arr.filter(x=>x&&x>0);
+    return v.length ? (v.reduce((a,b)=>a+b,0)/v.length).toFixed(1) : null;
+  }
+  const avgLibido   = avg(recent.map(l=>l.libido));
+  const avgErection = avg(recent.map(l=>l.erection));
+  const avgSleepQ   = avg(recent.map(l=>l.sleep?.quality));
+  const avgWeight   = avg(recent.map(l=>l.weight?parseFloat(l.weight):null));
+  const ejacCount   = recent.reduce((s,l)=>s+(l.ejaculation?.done==='あり'?(l.ejaculation.entries?.length||1):0),0);
+  const workoutCount = recent.filter(l=>l.workout?.done==='Yes').length;
+  const alcoholDays  = recent.filter(l=>l.alcohol?.done==='あり').length;
+  const firstDate    = logs[logs.length-1]?.date;
+
+  container.innerHTML = `
+    <div class="summary-card">
+      <div class="summary-title">📊 直近${recent.length}日間のサマリー</div>
+      <div class="summary-grid">
+        ${summaryItem('性欲 平均', avgLibido?starsStr(Math.round(avgLibido)):'—', avgLibido?avgLibido+' / 5':'データなし')}
+        ${summaryItem('勃起の質 平均', avgErection?starsStr(Math.round(avgErection)):'—', avgErection?avgErection+' / 5':'データなし')}
+        ${summaryItem('睡眠の質 平均', avgSleepQ?starsStr(Math.round(avgSleepQ)):'—', avgSleepQ?avgSleepQ+' / 5':'データなし')}
+        ${summaryItem('体重 平均', avgWeight?avgWeight:'—', avgWeight?'kg':'データなし')}
+        ${summaryItem('射精回数（計）', ejacCount, '回')}
+        ${summaryItem('筋トレ回数', workoutCount, '/'+recent.length+'日')}
+        ${summaryItem('飲酒日数', alcoholDays, '/'+recent.length+'日')}
+        ${summaryItem('記録日数（総計）', logs.length, '日')}
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-header">📅 直近の記録詳細</div>
+      <div class="section-body">
+        ${recent.map(log=>`
+          <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+            <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:6px;">${formatDateJP(log.date)}（${getDayOfWeek(log.date)}）</div>
+            <div style="font-size:12px;color:var(--text2);line-height:2;display:flex;flex-wrap:wrap;gap:8px;">
+              ${log.libido?'<span>🔥 性欲 '+'★'.repeat(log.libido)+'</span>':''}
+              ${log.erection?'<span>⚡ 勃起 '+'★'.repeat(log.erection)+'</span>':''}
+              ${log.sleep?.quality?'<span>😴 睡眠 '+'★'.repeat(log.sleep.quality)+'</span>':''}
+              ${log.morningErection?'<span>🌅 朝立ち：'+log.morningErection+'</span>':''}
+              ${log.ejaculation?.done==='あり'?'<span>💧 射精あり</span>':''}
+              ${log.workout?.done==='Yes'?'<span>💪 筋トレあり</span>':''}
+              ${log.weight?'<span>⚖️ '+log.weight+'kg</span>':''}
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>
+    <button class="save-btn" id="copyAllBtn" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);">
+      📋 直近${recent.length}日分を一括コピー
+    </button>
+    <div style="height:24px;"></div>`;
+
+  document.getElementById('copyAllBtn').addEventListener('click', () => {
+    const allText = recent.map(log => {
+      const dn = Math.round((new Date(log.date+'T00:00:00')-new Date(firstDate+'T00:00:00'))/86400000)+1;
+      return formatLogText(log,dn);
+    }).join('\n\n---\n\n');
+    copyToClipboard(allText, '📋 '+recent.length+'日分をコピーしました');
+  });
+}
+
+</script>
+</body>
+</html>
