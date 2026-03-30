@@ -33,14 +33,15 @@ import {
 
 // ▼▼▼ ここを書き換える ▼▼▼
 const firebaseConfig = {
-    apiKey: "AIzaSyB5_ghW5ciz21rynKFIAoWRGlc2UxiEmsI",
-    authDomain: "dayly-log.firebaseapp.com",
-    projectId: "dayly-log",
-    storageBucket: "dayly-log.firebasestorage.app",
-    messagingSenderId: "816770245525",
-    appId: "1:816770245525:web:8b124d716b206267c18c9c",
-    measurementId: "G-45SNT3Y6TD"
-  };
+  apiKey: "AIzaSyB5_ghW5ciz21rynKFIAoWRGlc2UxiEmsI",
+  authDomain: "dayly-log.firebaseapp.com",
+  projectId: "dayly-log",
+  storageBucket: "dayly-log.firebasestorage.app",
+  messagingSenderId: "816770245525",
+  appId: "1:816770245525:web:8b124d716b206267c18c9c",
+  measurementId: "G-45SNT3Y6TD"
+};
+
 // ▲▲▲ ここまで ▲▲▲
 
 /* ============================================================
@@ -1243,40 +1244,390 @@ function fallbackCopy(text, msg) {
 }
 
 /* ============================================================
-   編集モーダル
+   編集モーダル（全項目対応）
    ============================================================ */
+
+// 編集モーダル用の星ウィジェット（入力フォームとは別管理）
+let editStarValues = {};
+
+function createEditStars(containerId, key, currentVal) {
+  const c = document.getElementById(containerId);
+  if (!c) return;
+  c.innerHTML = '';
+  editStarValues[key] = currentVal || 0;
+  for (let i = 1; i <= 5; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'star-btn';
+    btn.textContent = '★';
+    btn.dataset.val = i;
+    if (i <= editStarValues[key]) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      editStarValues[key] = (editStarValues[key] === i) ? 0 : i;
+      c.querySelectorAll('.star-btn').forEach(b =>
+        b.classList.toggle('active', parseInt(b.dataset.val) <= editStarValues[key])
+      );
+    });
+    c.appendChild(btn);
+  }
+}
+
+// 編集モーダル用の射精エントリ
+let editEjacEntries = [];
+
+function renderEditEjacEntries() {
+  const c = document.getElementById('edit-ejac-entries');
+  if (!c) return;
+  c.innerHTML = '';
+  editEjacEntries.forEach((entry, i) => {
+    const div = document.createElement('div');
+    div.className = 'ejacula-entry';
+    div.innerHTML = `
+      <button class="remove-entry-btn" data-idx="${i}">✕</button>
+      <div class="field"><label>時刻（${i+1}回目）</label><input type="text" class="edit-ejac-time" data-idx="${i}" placeholder="例: 14:00" value="${entry.time||''}"></div>
+      <div class="field"><label>方法</label><input type="text" class="edit-ejac-method" data-idx="${i}" placeholder="例: 手" value="${entry.method||''}"></div>`;
+    c.appendChild(div);
+  });
+  c.querySelectorAll('.remove-entry-btn').forEach(btn => {
+    btn.addEventListener('click', () => { editEjacEntries.splice(+btn.dataset.idx,1); renderEditEjacEntries(); });
+  });
+  c.querySelectorAll('.edit-ejac-time').forEach(input => {
+    input.addEventListener('input', () => { editEjacEntries[+input.dataset.idx].time = input.value; });
+  });
+  c.querySelectorAll('.edit-ejac-method').forEach(input => {
+    input.addEventListener('input', () => { editEjacEntries[+input.dataset.idx].method = input.value; });
+  });
+}
+
+// セグメントボタンの選択状態を設定するヘルパー
+function setEditSegment(group, val) {
+  document.querySelectorAll(`.edit-seg[data-group="${group}"]`).forEach(b => {
+    b.classList.toggle('selected', b.dataset.val === val);
+  });
+}
+
+// 編集モーダル内セグメントの現在値を取得するヘルパー
+let editSelections = {};
+
 function openEditModal(idx) {
   const log = loadLogs()[idx];
   if (!log) return;
+
+  editStarValues = {};
+  editEjacEntries = (log.ejaculation?.entries || []).map(e => ({...e}));
+  editSelections = {};
+
+  // セグメントボタンHTML生成ヘルパー
+  function segHtml(group, options, currentVal) {
+    return options.map(v =>
+      `<button class="seg-btn edit-seg${currentVal===v?' selected':''}" data-group="${group}" data-val="${v}">${v}</button>`
+    ).join('');
+  }
+
+  // 飲酒・カフェイン・シトルリン・筋トレの初期表示制御
+  const workoutShow  = log.workout?.done === 'Yes'  ? 'block' : 'none';
+  const ejacShow     = log.ejaculation?.done === 'あり' ? 'block' : 'none';
+  const alcoholShow  = log.alcohol?.done === 'あり'  ? 'block' : 'none';
+  const caffeineShow = log.caffeine?.done === 'あり' ? 'block' : 'none';
+  const citrulShow   = log.citruline?.done === 'あり'? 'block' : 'none';
+
   document.getElementById('modal-body').innerHTML = `
+
+    <!-- 日付 -->
     <div class="section" style="margin-bottom:12px;">
       <div class="section-header">📅 日付</div>
-      <div class="section-body"><div class="field"><input type="date" id="edit-date" value="${log.date}"></div></div>
+      <div class="section-body">
+        <div class="field"><input type="date" id="edit-date" value="${log.date}"></div>
+      </div>
     </div>
+
+    <!-- 筋トレ -->
     <div class="section" style="margin-bottom:12px;">
-      <div class="section-header">📝 メモ</div>
-      <div class="section-body"><div class="field"><textarea id="edit-memo">${escapeHtml(log.memo||'')}</textarea></div></div>
+      <div class="section-header">💪 筋トレ</div>
+      <div class="section-body">
+        <div class="field"><label>実施</label>
+          <div class="segment">${segHtml('workout',['Yes','No'], log.workout?.done)}</div>
+        </div>
+        <div id="edit-workout-fields" class="conditional-fields" style="display:${workoutShow};">
+          <div class="field"><label>開始時間</label><input type="text" id="edit-workout-time" placeholder="例: 17:00" value="${log.workout?.time||''}"></div>
+          <div class="field"><label>内容</label><input type="text" id="edit-workout-content" placeholder="例: スクワット20×2" value="${escapeHtml(log.workout?.content||'')}"></div>
+          <div class="field"><label>主観的きつさ</label><div class="star-row" id="edit-stars-workout"></div></div>
+        </div>
+      </div>
     </div>
+
+    <!-- 朝立ち -->
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">🌅 朝立ち</div>
+      <div class="section-body">
+        <div class="segment">${segHtml('morning',['なし','弱い','普通','強い'], log.morningErection)}</div>
+      </div>
+    </div>
+
+    <!-- 性欲 -->
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">🔥 性欲</div>
+      <div class="section-body">
+        <div class="field"><div class="star-row" id="edit-stars-libido"></div></div>
+      </div>
+    </div>
+
+    <!-- 射精 -->
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">💧 射精</div>
+      <div class="section-body">
+        <div class="field"><label>射精</label>
+          <div class="segment">${segHtml('ejac',['あり','なし'], log.ejaculation?.done)}</div>
+        </div>
+        <div id="edit-ejac-fields" class="conditional-fields" style="display:${ejacShow};">
+          <div id="edit-ejac-entries"></div>
+          <button class="add-entry-btn" id="edit-add-ejac-btn">＋ 追加</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 勃起の質 -->
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">⚡ 勃起の質</div>
+      <div class="section-body">
+        <div class="field"><div class="star-row" id="edit-stars-erection"></div></div>
+      </div>
+    </div>
+
+    <!-- 下半身の状態 -->
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">🫁 下半身の状態</div>
+      <div class="section-body">
+        <div class="segment" style="flex-wrap:wrap;">${segHtml('lower',['張りなし','少し張り','張りあり','強い張り'], log.lowerBody)}</div>
+      </div>
+    </div>
+
+    <!-- 睡眠 -->
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">😴 睡眠</div>
+      <div class="section-body">
+        <div class="field-row">
+          <div class="field"><label>就寝</label><input type="text" id="edit-sleep-start" placeholder="例: 1:00" value="${log.sleep?.start||''}"></div>
+          <div class="field"><label>起床</label><input type="text" id="edit-sleep-end" placeholder="例: 8:00" value="${log.sleep?.end||''}"></div>
+        </div>
+        <div class="field"><label>睡眠時間</label><input type="text" id="edit-sleep-duration" value="${log.sleep?.duration||''}" placeholder="例: 7時間" style="color:var(--accent);" readonly></div>
+        <div class="field"><label>睡眠の質</label><div class="star-row" id="edit-stars-sleep"></div></div>
+      </div>
+    </div>
+
+    <!-- 体重 -->
     <div class="section" style="margin-bottom:12px;">
       <div class="section-header">⚖️ 体重</div>
-      <div class="section-body"><div class="field"><input type="number" id="edit-weight" value="${log.weight||''}" placeholder="kg" step="0.1"></div></div>
+      <div class="section-body">
+        <div class="field"><label>体重 (kg)</label><input type="number" id="edit-weight" value="${log.weight||''}" placeholder="kg" step="0.1"></div>
+      </div>
     </div>
+
+    <!-- 食事 -->
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">🍽️ 食事</div>
+      <div class="section-body">
+        <div class="field"><label>朝</label><input type="text" id="edit-meal-morning" value="${escapeHtml(log.meals?.morning||'')}"></div>
+        <div class="field"><label>昼</label><input type="text" id="edit-meal-noon"    value="${escapeHtml(log.meals?.noon||'')}"></div>
+        <div class="field"><label>夜</label><input type="text" id="edit-meal-night"   value="${escapeHtml(log.meals?.night||'')}"></div>
+        <div class="field"><label>間食</label><input type="text" id="edit-meal-snack" value="${escapeHtml(log.meals?.snack||'')}"></div>
+      </div>
+    </div>
+
+    <!-- 飲酒 -->
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">🍺 飲酒</div>
+      <div class="section-body">
+        <div class="field"><div class="segment">${segHtml('alcohol',['あり','なし'], log.alcohol?.done)}</div></div>
+        <div id="edit-alcohol-fields" class="conditional-fields" style="display:${alcoholShow};">
+          <div class="field"><label>種類</label><input type="text" id="edit-alcohol-type" value="${escapeHtml(log.alcohol?.type||'')}"></div>
+          <div class="field-row">
+            <div class="field"><label>量（杯）</label><input type="number" id="edit-alcohol-amount" value="${log.alcohol?.amount||''}" step="0.5" min="0"></div>
+            <div class="field"><label>時間</label><input type="text" id="edit-alcohol-time" value="${log.alcohol?.time||''}"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- カフェイン -->
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">☕ カフェイン</div>
+      <div class="section-body">
+        <div class="field"><div class="segment">${segHtml('caffeine',['あり','なし'], log.caffeine?.done)}</div></div>
+        <div id="edit-caffeine-fields" class="conditional-fields" style="display:${caffeineShow};">
+          <div class="field-row">
+            <div class="field"><label>量（杯）</label><input type="number" id="edit-caffeine-amount" value="${log.caffeine?.amount||''}" step="0.5" min="0"></div>
+            <div class="field"><label>時間</label><input type="text" id="edit-caffeine-time" value="${log.caffeine?.time||''}"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- シトルリン -->
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">💊 シトルリン</div>
+      <div class="section-body">
+        <div class="field"><div class="segment">${segHtml('citrul',['あり','なし'], log.citruline?.done)}</div></div>
+        <div id="edit-citrul-fields" class="conditional-fields" style="display:${citrulShow};">
+          <div class="field-row">
+            <div class="field"><label>量（mg）</label><input type="number" id="edit-citrul-amount" value="${log.citruline?.amount||''}" min="0"></div>
+            <div class="field"><label>時間</label><input type="text" id="edit-citrul-time" value="${log.citruline?.time||''}"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 亜鉛 -->
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">🧬 亜鉛</div>
+      <div class="section-body">
+        <div class="field"><label>摂取時間</label><input type="text" id="edit-zinc-time" value="${log.zinc?.time||''}"></div>
+      </div>
+    </div>
+
+    <!-- メモ -->
+    <div class="section" style="margin-bottom:12px;">
+      <div class="section-header">📝 メモ</div>
+      <div class="section-body">
+        <div class="field"><textarea id="edit-memo">${escapeHtml(log.memo||'')}</textarea></div>
+      </div>
+    </div>
+
+    <!-- ボタン -->
     <div style="display:flex;gap:10px;margin-top:16px;">
       <button class="save-btn" style="background:var(--bg3);color:var(--text2);" id="edit-cancel-btn">キャンセル</button>
       <button class="save-btn" id="edit-save-btn">保存</button>
-    </div>`;
+    </div>
+  `;
+
   const modal = document.getElementById('editModal');
   modal.classList.add('open');
-  document.getElementById('edit-cancel-btn').addEventListener('click', () => modal.classList.remove('open'));
-  document.getElementById('edit-save-btn').addEventListener('click', () => {
-    const logs2=loadLogs();
-    logs2[idx].date   = document.getElementById('edit-date').value;
-    logs2[idx].memo   = document.getElementById('edit-memo').value;
-    logs2[idx].weight = document.getElementById('edit-weight').value;
-    logs2.sort((a,b)=>b.date.localeCompare(a.date));
-    saveLogs(logs2); modal.classList.remove('open'); showToast('✏️ 編集しました'); renderLog();
+
+  // 星ウィジェット初期化（モーダルHTMLが描画された後）
+  createEditStars('edit-stars-workout',  'e-workout',  log.workout?.intensity);
+  createEditStars('edit-stars-libido',   'e-libido',   log.libido);
+  createEditStars('edit-stars-erection', 'e-erection', log.erection);
+  createEditStars('edit-stars-sleep',    'e-sleep',    log.sleep?.quality);
+
+  // 射精エントリ描画
+  renderEditEjacEntries();
+
+  // 射精追加ボタン
+  document.getElementById('edit-add-ejac-btn').addEventListener('click', () => {
+    editEjacEntries.push({time:'',method:''});
+    renderEditEjacEntries();
   });
-  modal.addEventListener('click', e => { if(e.target===modal) modal.classList.remove('open'); }, {once:true});
+
+  // 睡眠時間自動計算（編集モーダル内）
+  const calcEdit = () => {
+    document.getElementById('edit-sleep-duration').value =
+      calcSleepDuration(
+        document.getElementById('edit-sleep-start').value,
+        document.getElementById('edit-sleep-end').value
+      );
+  };
+  document.getElementById('edit-sleep-start').addEventListener('input', calcEdit);
+  document.getElementById('edit-sleep-end').addEventListener('input', calcEdit);
+
+  // モーダル内セグメントボタンの動作
+  // （メインのseg-btnイベントと共用。条件フィールドの表示切替マップを追加）
+  const editCondMap = {
+    workout:  'edit-workout-fields',
+    ejac:     'edit-ejac-fields',
+    alcohol:  'edit-alcohol-fields',
+    caffeine: 'edit-caffeine-fields',
+    citrul:   'edit-citrul-fields',
+  };
+  modal.querySelectorAll('.edit-seg').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const {group, val} = btn.dataset;
+      modal.querySelectorAll(`.edit-seg[data-group="${group}"]`).forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      editSelections[group] = val;
+      if (editCondMap[group]) {
+        document.getElementById(editCondMap[group]).style.display =
+          (val==='あり'||val==='Yes') ? 'block' : 'none';
+      }
+    });
+  });
+
+  // 初期セグメント値をeditSelectionsに反映
+  editSelections.workout  = log.workout?.done        || '';
+  editSelections.morning  = log.morningErection      || '';
+  editSelections.ejac     = log.ejaculation?.done    || '';
+  editSelections.lower    = log.lowerBody            || '';
+  editSelections.alcohol  = log.alcohol?.done        || '';
+  editSelections.caffeine = log.caffeine?.done       || '';
+  editSelections.citrul   = log.citruline?.done      || '';
+
+  // キャンセル
+  document.getElementById('edit-cancel-btn').addEventListener('click', () => modal.classList.remove('open'));
+
+  // 保存
+  document.getElementById('edit-save-btn').addEventListener('click', () => {
+    const v = id => document.getElementById(id)?.value || '';
+    const logs2 = loadLogs();
+
+    logs2[idx] = {
+      ...logs2[idx], // savedAt など既存フィールドを保持
+      date:            v('edit-date'),
+      workout: {
+        done:      editSelections.workout || '',
+        time:      v('edit-workout-time'),
+        content:   v('edit-workout-content'),
+        intensity: editStarValues['e-workout'] || 0,
+      },
+      morningErection: editSelections.morning  || '',
+      libido:          editStarValues['e-libido']   || 0,
+      ejaculation: {
+        done:    editSelections.ejac || '',
+        entries: editEjacEntries.map(e => ({...e})),
+      },
+      erection:  editStarValues['e-erection'] || 0,
+      lowerBody: editSelections.lower || '',
+      sleep: {
+        start:    v('edit-sleep-start'),
+        end:      v('edit-sleep-end'),
+        duration: v('edit-sleep-duration'),
+        quality:  editStarValues['e-sleep'] || 0,
+      },
+      weight: v('edit-weight'),
+      meals: {
+        morning: v('edit-meal-morning'),
+        noon:    v('edit-meal-noon'),
+        night:   v('edit-meal-night'),
+        snack:   v('edit-meal-snack'),
+      },
+      alcohol: {
+        done:   editSelections.alcohol || '',
+        type:   v('edit-alcohol-type'),
+        amount: v('edit-alcohol-amount'),
+        time:   v('edit-alcohol-time'),
+      },
+      caffeine: {
+        done:   editSelections.caffeine || '',
+        amount: v('edit-caffeine-amount'),
+        time:   v('edit-caffeine-time'),
+      },
+      citruline: {
+        done:   editSelections.citrul || '',
+        amount: v('edit-citrul-amount'),
+        time:   v('edit-citrul-time'),
+      },
+      zinc: { time: v('edit-zinc-time') },
+      memo: v('edit-memo'),
+    };
+
+    logs2.sort((a,b) => b.date.localeCompare(a.date));
+    saveLogs(logs2);
+    modal.classList.remove('open');
+    showToast('✏️ 編集しました');
+    renderLog();
+  });
+
+  // モーダル外タップで閉じる
+  modal.addEventListener('click', e => {
+    if (e.target === modal) modal.classList.remove('open');
+  }, {once: true});
 }
 
 /* ============================================================
